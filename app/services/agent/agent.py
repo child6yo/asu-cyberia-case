@@ -547,6 +547,7 @@ graph.add_node("budget", budget_node)
 graph.add_node("tools_after_budget", tool_node)
 graph.add_node("parse_budget", parse_budget_node)
 graph.add_node("budget_analysis", budget_analysis_node)
+graph.add_node("parse_budget_analysis", parse_budget_analysis_node)
 graph.add_node("budget_correcting", budget_correcting_node)
 
 
