@@ -1,18 +1,17 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_gigachat.chat_models import GigaChat
-from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 
-from typing import TypedDict, Annotated, Sequence
 from dotenv import load_dotenv
 import os
 
-from models import *
-from tools.tools import tools_list
+from services.agent.models import *
+from services.agent.tools.tools import tools_list
 
 load_dotenv()
 
@@ -34,17 +33,14 @@ llm = GigaChat(
     temperature=0.3,
 ).bind_tools(tools_list)
 
-
-class SystemState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    current_user_input: str
-    project: Project
-    should_continue: bool
-
+def get_last_human_message(state: SystemState) -> str:
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            return msg.content
+    return ""
 
 def entry_node(state: SystemState) -> dict:
-    """Входной узел"""
-    user_input = input().strip()
+    user_input = get_last_human_message(state)
 
     try:
         messages = state["messages"] + [
@@ -89,7 +85,7 @@ def parse_customer_node(state: SystemState) -> dict:
             "format_instructions": customer_parser.get_format_instructions()
         },
     )
-    user_input = input().strip()
+    user_input = get_last_human_message(state)
     messages = state["messages"]
     new_messages = messages + [HumanMessage(content=user_input)]
 
@@ -197,7 +193,8 @@ def parse_project_type_node(state: SystemState) -> dict:
             "format_instructions": requirements_parser.get_format_instructions()
         },
     )
-    user_input = input().strip()
+
+    user_input = get_last_human_message(state)
     messages = state["messages"]
     new_messages = messages + [HumanMessage(content=user_input)]
 
@@ -288,7 +285,7 @@ def check_details_node(state: SystemState) -> dict:
         },
     )
 
-    user_input = input().strip()
+    user_input = get_last_human_message(state)
     messages = state["messages"]
     new_messages = messages + [HumanMessage(content=user_input)]
 
@@ -317,7 +314,7 @@ def check_details_node(state: SystemState) -> dict:
 
 
 def correcting_node(state: SystemState) -> dict:
-    user_input = state["messages"][-1].content
+    user_input = get_last_human_message(state)
 
     correction_parser = JsonOutputParser(pydantic_object=Requirements)
     correction_prompt = PromptTemplate(
@@ -428,8 +425,11 @@ graph.add_conditional_edges(
 graph.add_edge("correcting", "detalize")
 graph.add_edge("final", END)
 
-app = graph.compile()
-initial_state = {
+memory = MemorySaver()
+app = graph.compile(
+    checkpointer=memory, interrupt_after=["entry", "project_type", "detalize"]
+)
+INITIAL_STATE = {
     "messages": [
         SystemMessage(
             content="Ты продавец-консультант веб-студии. Кратко поприветствуй пользователя. Вежливо собирай информацию с пользователя о проекте, который ему нужен."
@@ -437,6 +437,6 @@ initial_state = {
     ],
     "current_user_input": "",
     "project": Project(),
+    "should_continue": True,
 }
-
-app.invoke(initial_state)
+# app.invoke(INITIAL_STATE)

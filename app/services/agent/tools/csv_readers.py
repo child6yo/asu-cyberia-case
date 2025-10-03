@@ -2,7 +2,7 @@ from langchain_core.tools import tool
 from pydantic import ValidationError
 import pandas as pd
 import os
-from tools.models import *
+from services.agent.tools.models import *
 
 
 @tool

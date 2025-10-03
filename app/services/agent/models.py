@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import TypedDict, Optional, Literal, List
+from typing import TypedDict, Optional, Annotated, List, Sequence
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 project_types = [
     "Создание корпоративного сайта",
@@ -31,3 +33,8 @@ class Project(TypedDict):
     customer: Customer
     description: str
     requirements: Requirements
+
+class SystemState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    project: Project
+    should_continue: bool
