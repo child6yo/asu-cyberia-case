@@ -22,7 +22,7 @@ simple_llm = GigaChat(
     scope="GIGACHAT_API_PERS",
     model="GigaChat-2",
     verify_ssl_certs=False,
-    temperature=0.3,
+    temperature=0.4,
 )
 
 llm = GigaChat(
@@ -30,14 +30,16 @@ llm = GigaChat(
     scope="GIGACHAT_API_PERS",
     model="GigaChat-2",
     verify_ssl_certs=False,
-    temperature=0.3,
+    temperature=0.2,
 ).bind_tools(tools_list)
+
 
 def get_last_human_message(state: SystemState) -> str:
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
             return msg.content
     return ""
+
 
 def entry_node(state: SystemState) -> dict:
     user_input = get_last_human_message(state)
@@ -95,7 +97,6 @@ def parse_customer_node(state: SystemState) -> dict:
 
         return {
             "messages": new_messages,
-            "current_user_input": user_input,
             "project": {
                 "customer": {
                     "name": result.get("name"),
@@ -109,7 +110,6 @@ def parse_customer_node(state: SystemState) -> dict:
         print(f"Ошибка парсинга клиента: {e}")
         return {
             "messages": new_messages,
-            "current_user_input": user_input,
             "project": {
                 "customer": {
                     "name": None,
@@ -132,9 +132,12 @@ def parse_project_name_node(state: SystemState) -> dict:
     """,
         input_variables=["user_input"],
     )
+
+    user_input = get_last_human_message(state)
+
     try:
-        chain = project_name_prompt | llm
-        result = chain.invoke({"user_input": state["current_user_input"]})
+        chain = project_name_prompt | simple_llm
+        result = chain.invoke({"user_input": user_input})
         project_name = result.content.strip()
     except Exception as e:
         print(f"Ошибка: {e}")
@@ -217,7 +220,6 @@ def parse_project_type_node(state: SystemState) -> dict:
     }
     return {
         "messages": new_messages,
-        "current_user_input": user_input,
         "project": updated_project,
     }
 
@@ -233,9 +235,12 @@ def parse_project_description_node(state: SystemState) -> dict:
     """,
         input_variables=["user_input"],
     )
+
+    user_input = get_last_human_message(state)
+
     try:
         chain = project_description_prompt | llm
-        result = chain.invoke({"user_input": state["current_user_input"]})
+        result = chain.invoke({"user_input": user_input})
         project_description = result.content.strip()
     except Exception as e:
         print(f"Ошибка: {e}")
@@ -369,8 +374,159 @@ def correcting_node(state: SystemState) -> dict:
         return {"should_continue": True}
 
 
+def budget_node(state: SystemState) -> dict:
+    try:
+        messages = state["messages"] + [
+            HumanMessage(
+                content="Теперь необходимо спросить о бюджете пользователя и о сроках, за которые необходимо выполнить проект."
+            )
+        ]
+
+        response = simple_llm.invoke(messages)
+        ai_response = response.content
+
+        print(ai_response)
+
+        new_messages = messages + [AIMessage(content=ai_response)]
+        return {"messages": new_messages}
+
+    except Exception as e:
+        messages = state["messages"] + [
+            AIMessage(
+                content="Извините, произошла ошибка при обработке вашего вопроса."
+            ),
+        ]
+
+        return {"messages": messages}
+
+
+def parse_budget_node(state: SystemState) -> dict:
+    budget_parser = JsonOutputParser(pydantic_object=Estimate)
+    budget_prompt = PromptTemplate(
+        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и выдать ТОЛЬКО валидный JSON в формате:
+    {format_instructions}
+
+    Сообщение пользователя: {user_input}
+
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
+        input_variables=["user_input"],
+        partial_variables={
+            "format_instructions": budget_parser.get_format_instructions()
+        },
+    )
+
+    user_input = get_last_human_message(state)
+    messages = state["messages"]
+    new_messages = messages + [HumanMessage(content=user_input)]
+
+    try:
+        chain = budget_prompt | llm | budget_parser
+        result = chain.invoke({"user_input": user_input})
+
+        updated_project = {
+            **state["project"],
+            "estimate": {
+                "budget": result.get("budget"),
+                "time": result.get("time"),
+            },
+        }
+
+        return {"messages": new_messages, "project": updated_project}
+
+    except Exception as e:
+        print(f"Ошибка парсинга бюджета: {e}")
+
+        return {"messages": new_messages}
+
+
+def budget_analysis_node(state: SystemState) -> dict:
+    messages = list(state["messages"]) + [
+        HumanMessage(
+            f"""
+            Проанализируй прайс-лист по {state['project']['requirements']['type']},
+            учти доп. опции, которые выбрал пользователь - {state['project']['requirements']['options']},
+            сопоставь с бюджетом пользователя - {state['project']['estimate']['budget']} и
+            с требованиями пользователя по времени - {state['project']['estimate']['time']}
+
+            Если что-то не вписывается в рамки - предложи альтернативы, либо предложи пользователю увеличить сроки/бюджет.
+            Иными словами, если запросы пользователя не вписываются в прайс-лист - предложи компромисс.
+            """
+        )
+    ]
+    response = llm.invoke(messages)
+    print(response.content)
+
+    return {"messages": [response]}
+
+
+def parse_budget_analysis_node(state: SystemState) -> dict:
+    budget_analysis_parser = JsonOutputParser(pydantic_object=UserBudgetSufficiency)
+    budget_analysis_prompt = PromptTemplate(
+        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение консультанта и сказать, 
+        устроил ли его бюджет пользователя и его требования по срокам. 
+        Завернуть это НЕОБХОДИМО в валидный JSON формата:
+    {format_instructions}
+
+    Сообщение консультанта: {ai_input}
+
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
+        input_variables=["ai_input"],
+        partial_variables={
+            "format_instructions": budget_analysis_parser.get_format_instructions()
+        },
+    )
+
+    try:
+        chain = budget_analysis_prompt | llm | budget_analysis_parser
+        result = chain.invoke({"ai_input": state["messages"][-1].content})
+
+        if isinstance(result, str):
+            result_lower = result.strip().lower()
+            if "true" in result_lower or "да" in result_lower:
+                sufficiency = True
+            else:
+                sufficiency = False
+        else:
+            sufficiency = result.get("state", False)
+
+    except Exception as e:
+        print(f"Ошибка парсинга анализа бюджета: {e}")
+        sufficiency = False
+
+    return {"should_continue": sufficiency}
+
+
+def budget_correcting_node(state: SystemState) -> dict:
+    user_input = get_last_human_message(state)
+    messages = state["messages"]
+    new_messages = messages + [HumanMessage(content=user_input)]
+
+    try:
+        response = simple_llm.invoke(new_messages)
+        ai_response = response.content
+
+        print(ai_response)
+
+        new_messages = messages + [AIMessage(content=ai_response)]
+        return {"messages": new_messages}
+
+    except Exception as e:
+        messages = state["messages"] + [
+            HumanMessage(content=user_input),
+            AIMessage(
+                content="Извините, произошла ошибка при обработке вашего вопроса."
+            ),
+        ]
+
+        return {"messages": messages}
+
+
 def final_node(state: SystemState) -> dict:
     print(state["project"])
+    return {
+        "messages": state["messages"]
+        + [AIMessage(content="Спасибо! Ваш проект сохранён.")]
+    }
 
 
 graph = StateGraph(SystemState)
@@ -386,7 +542,12 @@ graph.add_node("check_details", check_details_node)
 graph.add_node("correcting", correcting_node)
 graph.add_node("final", final_node)
 tool_node = ToolNode(tools=tools_list)
-graph.add_node("tools", tool_node)
+graph.add_node("tools_after_detalize", tool_node)
+graph.add_node("budget", budget_node)
+graph.add_node("tools_after_budget", tool_node)
+graph.add_node("parse_budget", parse_budget_node)
+graph.add_node("budget_analysis", budget_analysis_node)
+graph.add_node("budget_correcting", budget_correcting_node)
 
 
 def route_after_input(state: SystemState) -> str:
@@ -411,23 +572,49 @@ graph.add_edge("project_type", "parse_project_type")
 graph.add_edge("parse_project_type", "parse_project_description")
 graph.add_edge("parse_project_description", "detalize")
 graph.add_conditional_edges(
-    "detalize", route_before_tools, {"continue": "tools", "end": "check_details"}
+    "detalize",
+    route_before_tools,
+    {"continue": "tools_after_detalize", "end": "check_details"},
 )
-graph.add_edge("tools", "detalize")
+graph.add_edge("tools_after_detalize", "detalize")
 graph.add_conditional_edges(
     "check_details",
     route_after_input,
     {
-        "continue": "final",
+        "continue": "budget",
         "back": "correcting",
     },
 )
 graph.add_edge("correcting", "detalize")
+graph.add_edge("budget", "parse_budget")
+graph.add_edge("parse_budget", "budget_analysis")
+graph.add_conditional_edges(
+    "budget_analysis",
+    route_before_tools,
+    {"continue": "tools_after_budget", "end": "parse_budget_analysis"},
+)
+graph.add_edge("tools_after_budget", "budget_analysis")
+graph.add_conditional_edges(
+    "parse_budget_analysis",
+    route_after_input,
+    {
+        "continue": "final",
+        "back": "budget_correcting",
+    },
+)
+graph.add_edge("budget_correcting", "parse_budget")
 graph.add_edge("final", END)
 
 memory = MemorySaver()
 app = graph.compile(
-    checkpointer=memory, interrupt_after=["entry", "project_type", "detalize"]
+    checkpointer=memory,
+    interrupt_after=[
+        "entry",
+        "project_type",
+        "detalize",
+        "budget",
+        "parse_budget_analysis",
+    ],
 )
 INITIAL_STATE = {
     "messages": [
@@ -439,4 +626,3 @@ INITIAL_STATE = {
     "project": Project(),
     "should_continue": True,
 }
-# app.invoke(INITIAL_STATE)

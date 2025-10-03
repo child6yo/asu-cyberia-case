@@ -9,8 +9,17 @@ project_types = [
     "Создание простого лендинга",
 ]
 
+
 class UserAgreement(BaseModel):
-    is_user_agree: bool = Field(description="Согласен ли пользователь с тем, что все верно.")
+    is_user_agree: bool = Field(
+        description="Согласен ли пользователь с тем, что все верно"
+    )
+
+
+class UserBudgetSufficiency(BaseModel):
+    state: bool = Field(
+        description="Хватает ли пользователю бюджета или адекватные ли сроки он предоставил."
+    )
 
 
 class Customer(BaseModel):
@@ -21,11 +30,18 @@ class Customer(BaseModel):
 
 class Requirements(BaseModel):
     type: Optional[str] = Field(
-        description="Тип проекта: Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга"
+        "Создание простого лендинга",
+        description="Тип проекта: Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга",
     )
     options: Optional[List[str]] = Field(
-        description="Опциональные параметры к проекту: все, что пользователь пожелает."
+        None,
+        description="Опциональные параметры к проекту: все, что пользователь пожелает",
     )
+
+
+class Estimate(BaseModel):
+    budget: Optional[float] = Field(None, description="Бюджет заказчика на проект")
+    time: Optional[int] = Field(None, description="Время В ЧАСАХ на проект")
 
 
 class Project(TypedDict):
@@ -33,6 +49,8 @@ class Project(TypedDict):
     customer: Customer
     description: str
     requirements: Requirements
+    estimate: Estimate
+
 
 class SystemState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
