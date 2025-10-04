@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from schemas.chat import *
-from services.agent.agent import INITIAL_STATE, app
+from app.services.agent.app import INITIAL_STATE, app
 from langchain_core.messages import AIMessage, HumanMessage
 
 router = APIRouter(prefix="/api", tags=["query"])
