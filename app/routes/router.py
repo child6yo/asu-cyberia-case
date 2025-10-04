@@ -35,7 +35,6 @@ async def chat(request: ChatRequest):
     return ChatResponse(
         response=response_text,
         project=final_state["project"],
-        finished=False,
     )
 
 

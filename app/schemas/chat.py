@@ -10,4 +10,3 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     project: Optional[dict] = None
-    finished: bool = False
