@@ -28,28 +28,12 @@ class Customer(BaseModel):
     phone: Optional[str] = Field(None, description="Номер телефона заказчика")
 
 
-class Requirements(BaseModel):
-    type: Optional[str] = Field(
-        "Создание простого лендинга",
-        description="Тип проекта: Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга",
-    )
-    options: Optional[List[str]] = Field(
-        None,
-        description="Опциональные параметры к проекту: все, что пользователь пожелает",
-    )
-
-
-class Estimate(BaseModel):
-    budget: Optional[float] = Field(None, description="Бюджет заказчика на проект")
-    time: Optional[int] = Field(None, description="Время В ЧАСАХ на проект")
-
-
 class Project(TypedDict):
     name: str
     customer: Customer
     description: str
-    requirements: Requirements
-    estimate: Estimate
+    requirements: str
+    estimate: str
 
 
 class SystemState(TypedDict):

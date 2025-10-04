@@ -28,7 +28,7 @@ simple_llm = GigaChat(
 llm = GigaChat(
     credentials=CRED,
     scope="GIGACHAT_API_PERS",
-    model="GigaChat-2",
+    model="GigaChat-2-Max",
     verify_ssl_certs=False,
     temperature=0.2,
 ).bind_tools(tools_list)
@@ -74,7 +74,7 @@ def entry_node(state: SystemState) -> dict:
 def parse_customer_node(state: SystemState) -> dict:
     customer_parser = JsonOutputParser(pydantic_object=Customer)
     customer_prompt = PromptTemplate(
-        template="""Вычлени из сообщения необходимую информацию о пользователе. 
+        template="""Извлеки из сообщения необходимую информацию о пользователе. 
     Если чего-то не хватает - заполни только те поля, информацию о которых пользователь предоставил.
 
     Сообщение: {user_input}
@@ -92,7 +92,7 @@ def parse_customer_node(state: SystemState) -> dict:
     new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
-        parser_chain = customer_prompt | llm | customer_parser
+        parser_chain = customer_prompt | simple_llm | customer_parser
         result = parser_chain.invoke({"user_input": user_input})
 
         return {
@@ -170,31 +170,28 @@ def project_type_node(state: SystemState) -> dict:
         return {"messages": new_messages}
 
     except Exception as e:
-        messages = state["messages"] + [
+        new_messages = state["messages"] + [
             AIMessage(
                 content="Извините, произошла ошибка при обработке вашего вопроса."
             ),
         ]
 
-        return {"messages": messages}
+        return {"messages": new_messages}
 
 
 def parse_project_type_node(state: SystemState) -> dict:
-    requirements_parser = JsonOutputParser(pydantic_object=Requirements)
     requirements_prompt = PromptTemplate(
-        template="""Вычлени из сообщения всю информацию о проекте, включающую:
+        template="""Извлеки из сообщения всю информацию о проекте, включающую:
     - тип проекта (Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга)
-    - дополнительные опции (пожелания по проекту)
+    - дополнительные опции (пожелания по проекту).
 
     Сообщение: {user_input}
 
-    {format_instructions}
+    Формат, в котором необходимо вернуть информацию:
+    'Тип проекта, доп. опция 1, доп. опция 2...'
 
-    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО ИНФОРМАЦИЮ В НУЖНОМ ФОРМАТЕ.""",
         input_variables=["user_input"],
-        partial_variables={
-            "format_instructions": requirements_parser.get_format_instructions()
-        },
     )
 
     user_input = get_last_human_message(state)
@@ -202,21 +199,18 @@ def parse_project_type_node(state: SystemState) -> dict:
     new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
-        chain = requirements_prompt | llm | requirements_parser
+        chain = requirements_prompt | simple_llm
         result = chain.invoke({"user_input": user_input})
-        requirements_type = result.get("type")
-        requirements_options = result.get("options")
+        reqs = result.content.strip()
     except Exception as e:
         print(f"Ошибка: {e}")
+        reqs = "Не определено"
 
     current_project = state.get("project", {})
     updated_project = {
         "name": current_project.get("name", "Без названия"),
         "customer": current_project.get("customer", {}),
-        "requirements": {
-            "type": requirements_type,
-            "options": requirements_options,
-        },
+        "requirements": reqs,
     }
     return {
         "messages": new_messages,
@@ -239,18 +233,19 @@ def parse_project_description_node(state: SystemState) -> dict:
     user_input = get_last_human_message(state)
 
     try:
-        chain = project_description_prompt | llm
+        chain = project_description_prompt | simple_llm
         result = chain.invoke({"user_input": user_input})
         project_description = result.content.strip()
     except Exception as e:
         print(f"Ошибка: {e}")
+        project_description = "Не определено"
 
     current_project = state.get("project", {})
     updated_project = {
         "name": current_project.get("name", "Без названия"),
         "customer": current_project.get("customer", {}),
         "description": project_description,
-        "requirements": current_project.get("requirements", {}),
+        "requirements": current_project.get("requirements", "Не определено"),
     }
     print(updated_project)
     return {"project": updated_project}
@@ -260,19 +255,19 @@ def detalize_node(state: SystemState) -> dict:
     messages = list(state["messages"]) + [
         HumanMessage(
             f"""
-            Проанализируй прайс-лист по {state['project']['requirements']['type']},
-            сопоставь с требованиями пользователя (ТРЕБОВАНИЯ: {state['project']['requirements']['options']}).
+            Проанализируй прайс-лист, исходя из требования {state['project']['requirements']},
             Озвучь требуемые услуги и предложи дополнительные опции, которые подошли бы
             по описанию {state['project']['description']}.
 
             Спроси пользователя, верно ли все озвучено. Если что-то не верно — пользователь должен объяснить.
+            ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ НЕ СИЛЬНО ДЛИННЫМ, ИМЕННО ОТ РОЛИ КОНСУЛЬТАНТА - КЛИЕНТУ.
             """
         )
     ]
-    response = llm.invoke(messages)
+    response = llm.invoke(messages[0] + messages[-3:])
     print(response.content)
 
-    return {"messages": [response]}
+    return {"messages": state["messages"] + [response]}
 
 
 def check_details_node(state: SystemState) -> dict:
@@ -291,8 +286,6 @@ def check_details_node(state: SystemState) -> dict:
     )
 
     user_input = get_last_human_message(state)
-    messages = state["messages"]
-    new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
         chain = agreement_prompt | llm | agreement_parser
@@ -315,53 +308,39 @@ def check_details_node(state: SystemState) -> dict:
         print(f"Ошибка парсинга согласия: {e}")
         agreement = False
 
-    return {"messages": new_messages, "should_continue": agreement}
+    return {"should_continue": agreement}
 
 
 def correcting_node(state: SystemState) -> dict:
     user_input = get_last_human_message(state)
 
-    correction_parser = JsonOutputParser(pydantic_object=Requirements)
     correction_prompt = PromptTemplate(
-        template="""Пользователь указал, что в предыдущем описании есть ошибки.
+        template="""Пользователь указал, что в предыдущих требованиях к проекту есть ошибки.
         На основе его комментария извлеки обновлённые требования к проекту.
 
+        Контекст: {context}
         Текущие требования: {requirements}
         Текущее описание: {description}
         Комментарий пользователя: {user_input}
 
-        {format_instructions}
-
-        НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
-        input_variables=["user_input"],
-        partial_variables={
-            "format_instructions": correction_parser.get_format_instructions()
-        },
+        Обновленные требования НЕОБХОДИМО ИЗВЛЕЧЬ В ФОРМАТЕ ПРЕДЫДУЩИХ ТРЕБОВАНИЙ.
+        
+        НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ.""",
+        input_variables=["context", "requirements", "description", "user_input"],
     )
 
     try:
-        chain = correction_prompt | llm | correction_parser
+        chain = correction_prompt | llm
         updated_requirements = chain.invoke(
             {
+                "context": state["messages"][0] + state["messages"][-3:],
                 "user_input": user_input,
                 "requirements": state["project"]["requirements"],
                 "description": state["project"]["description"],
             }
         )
 
-        current_req = state["project"]["requirements"]
-        new_req = {}
-
-        if updated_requirements.get("type") is not None:
-            new_req["type"] = updated_requirements["type"]
-        else:
-            new_req["type"] = current_req.get("type")
-
-        if updated_requirements.get("options") is not None:
-            new_req["options"] = updated_requirements["options"]
-        else:
-            new_req["options"] = current_req.get("options", [])
-
+        new_req = updated_requirements.content.strip()
         updated_project = {**state["project"], "requirements": new_req}
 
         return {
@@ -382,7 +361,7 @@ def budget_node(state: SystemState) -> dict:
             )
         ]
 
-        response = simple_llm.invoke(messages)
+        response = simple_llm.invoke(messages[0] + messages[-3:])
         ai_response = response.content
 
         print(ai_response)
@@ -401,18 +380,17 @@ def budget_node(state: SystemState) -> dict:
 
 
 def parse_budget_node(state: SystemState) -> dict:
-    budget_parser = JsonOutputParser(pydantic_object=Estimate)
     budget_prompt = PromptTemplate(
-        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и выдать ТОЛЬКО валидный JSON в формате:
-    {format_instructions}
+        template="""Извлеки из сообщения пользователя и контекста только бюджет,
+    которым располагает пользователь и сроки, которые он предоставляет.
+    Верни в формате 'Бюджет n (руб.), время m (ч.)'
+    Если что-то не указано - введи "Неограничено".
 
     Сообщение пользователя: {user_input}
+    Контекст: {context}
 
-    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
-        input_variables=["user_input"],
-        partial_variables={
-            "format_instructions": budget_parser.get_format_instructions()
-        },
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ.""",
+        input_variables=["user_input", "context"],
     )
 
     user_input = get_last_human_message(state)
@@ -420,15 +398,17 @@ def parse_budget_node(state: SystemState) -> dict:
     new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
-        chain = budget_prompt | llm | budget_parser
-        result = chain.invoke({"user_input": user_input})
+        chain = budget_prompt | llm
+        result = chain.invoke(
+            {
+                "user_input": user_input,
+                "context": state["messages"][0] + state["messages"][-3:],
+            }
+        )
 
         updated_project = {
             **state["project"],
-            "estimate": {
-                "budget": result.get("budget"),
-                "time": result.get("time"),
-            },
+            "estimate": result.content.strip(),
         }
 
         return {"messages": new_messages, "project": updated_project}
@@ -443,17 +423,17 @@ def budget_analysis_node(state: SystemState) -> dict:
     messages = list(state["messages"]) + [
         HumanMessage(
             f"""
-            Проанализируй прайс-лист по {state['project']['requirements']['type']},
-            учти доп. опции, которые выбрал пользователь - {state['project']['requirements']['options']},
-            сопоставь с бюджетом пользователя - {state['project']['estimate']['budget']} и
-            с требованиями пользователя по времени - {state['project']['estimate']['time']}
+            Проанализируй прайс-лист, исходя из требований: {state['project']['requirements']},
+            сопоставь с бюджетом пользователя и требованиями по времени - {state['project']['estimate']} и
 
             Если что-то не вписывается в рамки - предложи альтернативы, либо предложи пользователю увеличить сроки/бюджет.
             Иными словами, если запросы пользователя не вписываются в прайс-лист - предложи компромисс.
+
+            ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ НЕ СИЛЬНО ДЛИННЫМ, ИМЕННО ОТ РОЛИ КОНСУЛЬТАНТА - КЛИЕНТУ.
             """
         )
     ]
-    response = llm.invoke(messages)
+    response = llm.invoke(messages[0] + messages[-3:])
     print(response.content)
 
     return {"messages": [response]}
@@ -477,7 +457,7 @@ def parse_budget_analysis_node(state: SystemState) -> dict:
     )
 
     try:
-        chain = budget_analysis_prompt | llm | budget_analysis_parser
+        chain = budget_analysis_prompt | simple_llm | budget_analysis_parser
         result = chain.invoke({"ai_input": state["messages"][-1].content})
 
         if isinstance(result, str):
@@ -502,7 +482,7 @@ def budget_correcting_node(state: SystemState) -> dict:
     new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
-        response = simple_llm.invoke(new_messages)
+        response = simple_llm.invoke(new_messages[0] + new_messages[-3:])
         ai_response = response.content
 
         print(ai_response)
@@ -529,6 +509,10 @@ def final_node(state: SystemState) -> dict:
     }
 
 
+def mid_node(state: SystemState) -> dict:
+    return {}
+
+
 graph = StateGraph(SystemState)
 
 graph.add_node("entry", entry_node)
@@ -549,6 +533,7 @@ graph.add_node("parse_budget", parse_budget_node)
 graph.add_node("budget_analysis", budget_analysis_node)
 graph.add_node("parse_budget_analysis", parse_budget_analysis_node)
 graph.add_node("budget_correcting", budget_correcting_node)
+graph.add_node("mid", mid_node)
 
 
 def route_after_input(state: SystemState) -> str:
@@ -575,9 +560,10 @@ graph.add_edge("parse_project_description", "detalize")
 graph.add_conditional_edges(
     "detalize",
     route_before_tools,
-    {"continue": "tools_after_detalize", "end": "check_details"},
+    {"continue": "tools_after_detalize", "end": "mid"},
 )
 graph.add_edge("tools_after_detalize", "detalize")
+graph.add_edge("mid", "check_details")
 graph.add_conditional_edges(
     "check_details",
     route_after_input,
@@ -603,7 +589,7 @@ graph.add_conditional_edges(
         "back": "budget_correcting",
     },
 )
-graph.add_edge("budget_correcting", "parse_budget")
+graph.add_edge("budget_correcting", "correcting")
 graph.add_edge("final", END)
 
 memory = MemorySaver()
@@ -612,7 +598,7 @@ app = graph.compile(
     interrupt_after=[
         "entry",
         "project_type",
-        "detalize",
+        "mid",
         "budget",
         "parse_budget_analysis",
     ],
@@ -620,7 +606,7 @@ app = graph.compile(
 INITIAL_STATE = {
     "messages": [
         SystemMessage(
-            content="Ты продавец-консультант веб-студии. Кратко поприветствуй пользователя. Вежливо собирай информацию с пользователя о проекте, который ему нужен."
+            content="Ты продавец-консультант веб-студии. Поприветствуй пользователя. Вежливо собирай информацию с пользователя о проекте, который ему нужен."
         )
     ],
     "current_user_input": "",
