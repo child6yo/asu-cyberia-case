@@ -9,6 +9,12 @@ project_types = [
     "Создание простого лендинга",
 ]
 
+class MessageSense(BaseMessage):
+    sense: bool = Field(
+        description="""Имеет ли сообщение смысл в контексте диалога. 
+        True - если сообщение вписывается в контекст. False - если требуется что-то уточнить, сообщение является вопросом,
+        или же не вписывается в контекст."""
+    )
 
 class UserAgreement(BaseModel):
     is_user_agree: bool = Field(

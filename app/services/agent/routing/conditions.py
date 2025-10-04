@@ -7,9 +7,10 @@ def route_after_input(state: SystemState) -> str:
 
 
 def route_before_tools(state: SystemState) -> str:
-    last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and getattr(
-        last_message, "tool_calls", None
-    ):
+    messages = state["messages"]
+    last_message = messages[-1]
+
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "continue"
+
     return "end"

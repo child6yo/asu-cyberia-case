@@ -16,7 +16,8 @@ def project_type_node(state: SystemState) -> dict:
     try:
         messages = state["messages"] + [
             HumanMessage(
-                content=f"Теперь необходимо спросить о типе проекта... Возможные типы: {', '.join(project_types)}."
+                content=f"""Теперь необходимо спросить о типе проекта... Возможные типы: {project_types}. 
+                Также пользователь должен назвать свои пожелания по проекту, описать его."""
             )
         ]
         response = simple_llm.invoke(messages)
@@ -29,19 +30,7 @@ def project_type_node(state: SystemState) -> dict:
 
 
 def detalize_node(state: SystemState) -> dict:
-    messages = list(state["messages"]) + [
-        HumanMessage(
-            f"""
-            Проанализируй прайс-лист, исходя из требования {state['project']['requirements']},
-            Озвучь требуемые услуги и предложи дополнительные опции, которые подошли бы
-            по описанию {state['project']['description']}.
-
-            Спроси пользователя, верно ли все озвучено. Если что-то не верно — пользователь должен объяснить.
-            ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ НЕ СИЛЬНО ДЛИННЫМ, ИМЕННО ОТ РОЛИ КОНСУЛЬТАНТА - КЛИЕНТУ.
-            """
-        )
-    ]
-    response = llm_with_tools.invoke([messages[0]] + messages[-3:])
+    response = llm_with_tools.invoke(state["messages"])
     print(response.content)
 
     return {"messages": state["messages"] + [response]}
@@ -50,13 +39,14 @@ def detalize_node(state: SystemState) -> dict:
 def check_details_node(state: SystemState) -> dict:
     agreement_parser = JsonOutputParser(pydantic_object=UserAgreement)
     agreement_prompt = PromptTemplate(
-        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и выдать ТОЛЬКО валидный JSON в формате:
+        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и контекст и выдать ТОЛЬКО валидный JSON в формате:
     {format_instructions}
 
     Сообщение пользователя: {user_input}
+    Контекст: {context}
 
     НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
-        input_variables=["user_input"],
+        input_variables=["user_input", "context"],
         partial_variables={
             "format_instructions": agreement_parser.get_format_instructions()
         },
@@ -66,7 +56,9 @@ def check_details_node(state: SystemState) -> dict:
 
     try:
         chain = agreement_prompt | llm_with_tools | agreement_parser
-        result = chain.invoke({"user_input": user_input})
+        result = chain.invoke(
+            {"user_input": user_input, "context": state["messages"][-2:]}
+        )
 
         if isinstance(result, str):
             result_lower = result.strip().lower()
@@ -157,23 +149,10 @@ def budget_node(state: SystemState) -> dict:
 
 
 def budget_analysis_node(state: SystemState) -> dict:
-    messages = list(state["messages"]) + [
-        HumanMessage(
-            f"""
-            Проанализируй прайс-лист, исходя из требований: {state['project']['requirements']},
-            сопоставь с бюджетом пользователя и требованиями по времени - {state['project']['estimate']} и
-
-            Если что-то не вписывается в рамки - предложи альтернативы, либо предложи пользователю увеличить сроки/бюджет.
-            Иными словами, если запросы пользователя не вписываются в прайс-лист - предложи компромисс.
-
-            ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ НЕ СИЛЬНО ДЛИННЫМ, ИМЕННО ОТ РОЛИ КОНСУЛЬТАНТА - КЛИЕНТУ.
-            """
-        )
-    ]
-    response = llm_with_tools.invoke([messages[0]] + messages[-3:])
+    response = llm_with_tools.invoke(state["messages"])
     print(response.content)
 
-    return {"messages": [response]}
+    return {"messages": state["messages"] + [response]}
 
 
 def budget_correcting_node(state: SystemState) -> dict:

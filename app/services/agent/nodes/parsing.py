@@ -154,8 +154,22 @@ def parse_project_description_node(state: SystemState) -> dict:
         "description": project_description,
         "requirements": current_project.get("requirements", "Не определено"),
     }
+
+    messages = list(state["messages"]) + [
+        HumanMessage(
+            f"""
+            Тебе нужно подобрать услуги и опции на основе:
+            - Требований: {state['project']['requirements']}
+            - Описания проекта: {project_description}
+
+            Если у тебя нет точной информации — **обязательно используй доступные инструменты** для получения данных из прайс-листа.
+            Не придумывай данные. Сначала получи информацию, потом предложи варианты.
+            ТВОЙ ОТВЕТ ДОЛЖЕН БЫТЬ НЕ СИЛЬНО ДЛИННЫМ, ИМЕННО ОТ РОЛИ КОНСУЛЬТАНТА - КЛИЕНТУ.
+            """
+        )
+    ]
     print(updated_project)
-    return {"project": updated_project}
+    return {"messages": messages, "project": updated_project}
 
 
 def parse_budget_node(state: SystemState) -> dict:
@@ -189,13 +203,44 @@ def parse_budget_node(state: SystemState) -> dict:
             **state["project"],
             "estimate": result.content.strip(),
         }
+        new_messages = new_messages + [
+            HumanMessage(
+                f"""
+                Тебе нужно провести анализ бюджета на основе:
+                - Требований проекта: {state['project']['requirements']}
+                - Бюджета клиента и сроки реализации: {result.content.strip()}
+
+                Для этого **обязательно используй доступные инструменты**, чтобы получить актуальные данные из прайс-листа.
+                Необходимый прайс-лист - первая часть требований (т.е одно из: "Создание корпоративного сайта", "Создание интернет-магазина", "Создание простого лендинга",)
+                Не давай рекомендаций и не сравнивай бюджет, пока не получишь точную информацию через инструменты.
+                Если данные получены — кратко предложи клиенту компромисс (альтернативы, изменение сроков или бюджета).
+                Отвечай от лица консультанта, коротко и по делу.
+                """
+            )
+        ]
 
         return {"messages": new_messages, "project": updated_project}
 
     except Exception as e:
         print(f"Ошибка парсинга бюджета: {e}")
+        new_messages = new_messages + [
+            HumanMessage(
+                f"""
+                Тебе нужно провести анализ бюджета на основе:
+                - Требований проекта: {state['project']['requirements']}
+                - Неограниченного бюджета и сроков.
 
-        return {"messages": new_messages}
+                Для этого **обязательно используй доступные инструменты**, чтобы получить актуальные данные из прайс-листа.
+                Необходимый прайс-лист - первая часть требований (т.е одно из: "Создание корпоративного сайта", "Создание интернет-магазина", "Создание простого лендинга",)
+                Не давай рекомендаций и не сравнивай бюджет, пока не получишь точную информацию через инструменты.
+                Если данные получены — кратко предложи клиенту компромисс (альтернативы, изменение сроков или бюджета).
+                Отвечай от лица консультанта, коротко и по делу.
+                """
+            )
+        ]
+        updated_project = {**state["project"], "estimate": "Не указан"}
+
+        return {"messages": new_messages, "project": updated_project}
 
 
 def parse_budget_analysis_node(state: SystemState) -> dict:
@@ -233,3 +278,45 @@ def parse_budget_analysis_node(state: SystemState) -> dict:
         sufficiency = False
 
     return {"should_continue": sufficiency}
+
+
+def parse_middleware_node(state: SystemState) -> dict:
+    message_sense_parser = JsonOutputParser(pydantic_object=UserBudgetSufficiency)
+    message_sense_prompt = PromptTemplate(
+        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и контекст и 
+        представить его в формате.
+    {format_instructions}
+
+    Сообщение: {user_input}
+    Контекст: {context}
+
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО JSON.""",
+        input_variables=["user_input", "context"],
+        partial_variables={
+            "format_instructions": message_sense_parser.get_format_instructions()
+        },
+    )
+
+    try:
+        chain = message_sense_prompt | simple_llm | message_sense_parser
+        result = chain.invoke(
+            {
+                "user_input": state["messages"][-1].content,
+                "context": state["messages"][-3:],
+            }
+        )
+
+        if isinstance(result, str):
+            result_lower = result.strip().lower()
+            if "true" in result_lower or "да" in result_lower:
+                sense = True
+            else:
+                sense = False
+        else:
+            sense = result.get("state", False)
+
+    except Exception as e:
+        print(f"Ошибка парсинга анализа бюджета: {e}")
+        sense = True
+
+    return {"should_continue": sense}
