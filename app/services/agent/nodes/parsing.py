@@ -172,6 +172,44 @@ def parse_project_description_node(state: SystemState) -> dict:
     return {"messages": messages, "project": updated_project}
 
 
+def parse_details_node(state: SystemState) -> dict:
+    requirements_prompt = PromptTemplate(
+        template="""Извлеки из сообщения и контекста всю УТВЕРЖДЕННУЮ ПОЛЬЗОВАТЕЛЕМ (включая правки) информацию о проекте, включающую:
+    - тип проекта (Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга)
+    - дополнительные опции (пожелания по проекту).
+
+    Сообщение: {user_input}
+    Контекст: {context}
+
+    Формат, в котором необходимо вернуть информацию:
+    'Тип проекта, доп. опция 1, доп. опция 2...'
+
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО ИНФОРМАЦИЮ В НУЖНОМ ФОРМАТЕ.""",
+        input_variables=["user_input", "context"],
+    )
+
+    user_input = get_last_human_message(state)
+    messages = state["messages"]
+    new_messages = messages + [HumanMessage(content=user_input)]
+
+    try:
+        chain = requirements_prompt | simple_llm
+        result = chain.invoke({"user_input": user_input, "context": state["messages"]})
+        reqs = result.content.strip()
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        reqs = "Не определено"
+
+    updated_project = {
+        **state["project"],
+        "requirements": reqs,
+    }
+    return {
+        "messages": new_messages,
+        "project": updated_project,
+    }
+
+
 def parse_budget_node(state: SystemState) -> dict:
     budget_prompt = PromptTemplate(
         template="""Извлеки из сообщения пользователя и контекста только бюджет,
@@ -271,19 +309,56 @@ def parse_budget_analysis_node(state: SystemState) -> dict:
             else:
                 sufficiency = False
         else:
-            sufficiency = result.get("state", False)
+            sufficiency = result.get("state")
 
     except Exception as e:
         print(f"Ошибка парсинга анализа бюджета: {e}")
-        sufficiency = False
+        sufficiency = True
 
     return {"should_continue": sufficiency}
 
 
+def parse_final_reqs_node(state: SystemState) -> dict:
+    requirements_prompt = PromptTemplate(
+        template="""Извлеки из контекста всю УТВЕРЖДЕННУЮ ПО ИТОГУ РАССМОТРЕНИЯ БЮДЖЕТА ИНФОРМАЦИЮ о проекте, включающую:
+    - тип проекта (Создание корпоративного сайта, Создание интернет-магазина, Создание простого лендинга)
+    - дополнительные опции (пожелания по проекту).
+
+    Контекст: {context}
+
+    Формат, в котором необходимо вернуть информацию:
+    'Тип проекта, доп. опция 1, доп. опция 2...'
+
+    НЕ ДОБАВЛЯЙ НИКАКИХ КОММЕНТАРИЕВ. ВЕРНИ ТОЛЬКО ИНФОРМАЦИЮ В НУЖНОМ ФОРМАТЕ.""",
+        input_variables=["context"],
+    )
+
+    user_input = get_last_human_message(state)
+    messages = state["messages"]
+    new_messages = messages + [HumanMessage(content=user_input)]
+
+    try:
+        chain = requirements_prompt | simple_llm
+        result = chain.invoke({"context": state["messages"]})
+        reqs = result.content.strip()
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        reqs = "Не определено"
+
+    updated_project = {
+        **state["project"],
+        "requirements": reqs,
+    }
+    return {
+        "messages": new_messages,
+        "project": updated_project,
+    }
+
+
 def parse_middleware_node(state: SystemState) -> dict:
-    message_sense_parser = JsonOutputParser(pydantic_object=UserBudgetSufficiency)
+    message_sense_parser = JsonOutputParser(pydantic_object=MessageSense)
     message_sense_prompt = PromptTemplate(
-        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и контекст и 
+        template="""Ты — строгий парсер. Твоя задача — проанализировать сообщение пользователя и контекст и
         представить его в формате.
     {format_instructions}
 
@@ -302,7 +377,7 @@ def parse_middleware_node(state: SystemState) -> dict:
         result = chain.invoke(
             {
                 "user_input": state["messages"][-1].content,
-                "context": state["messages"][-3:],
+                "context": [state["messages"][0]] + state["messages"][-3:],
             }
         )
 
@@ -313,10 +388,10 @@ def parse_middleware_node(state: SystemState) -> dict:
             else:
                 sense = False
         else:
-            sense = result.get("state", False)
+            sense = result.get("sense")
 
     except Exception as e:
-        print(f"Ошибка парсинга анализа бюджета: {e}")
+        print(f"Ошибка парсинга смысла сообщения: {e}")
         sense = True
 
     return {"should_continue": sense}

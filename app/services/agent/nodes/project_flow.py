@@ -16,7 +16,7 @@ def project_type_node(state: SystemState) -> dict:
     try:
         messages = state["messages"] + [
             HumanMessage(
-                content=f"""Теперь необходимо спросить о типе проекта... Возможные типы: {project_types}. 
+                content=f"""Теперь необходимо спросить о типе проекта. Возможные типы: {project_types}. 
                 Также пользователь должен назвать свои пожелания по проекту, описать его."""
             )
         ]

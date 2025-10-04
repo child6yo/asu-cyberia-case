@@ -11,6 +11,9 @@ from services.agent.nodes.parsing import (
     parse_project_description_node,
     parse_budget_node,
     parse_budget_analysis_node,
+    parse_details_node,
+    parse_final_reqs_node,
+    parse_middleware_node,
 )
 from services.agent.nodes.project_flow import (
     project_type_node,
@@ -22,6 +25,7 @@ from services.agent.nodes.project_flow import (
     budget_correcting_node,
     mid_node,
 )
+from services.agent.nodes.middleware import middleware_node
 from services.agent.nodes.final import final_node
 from services.agent.routing.conditions import (
     route_after_input,
@@ -35,6 +39,8 @@ def build_graph():
     tool_node = ToolNode(tools=tools_list)
 
     graph.add_node("entry", entry_node)
+    graph.add_node("parse_entry_middleware", parse_middleware_node)
+    graph.add_node("entry_middleware", middleware_node)
     graph.add_node("parse_customer", parse_customer_node)
     graph.add_node("parse_project_name", parse_project_name_node)
     graph.add_node("project_type", project_type_node)
@@ -45,6 +51,8 @@ def build_graph():
     graph.add_node("correcting", correcting_node)
     graph.add_node("final", final_node)
     graph.add_node("mid", mid_node)
+    graph.add_node("parse_mid_middleware", parse_middleware_node)
+    graph.add_node("mid_middleware", middleware_node)
     graph.add_node("tools_after_detalize", tool_node)
     graph.add_node("budget", budget_node)
     graph.add_node("parse_budget", parse_budget_node)
@@ -52,9 +60,17 @@ def build_graph():
     graph.add_node("parse_budget_analysis", parse_budget_analysis_node)
     graph.add_node("budget_correcting", budget_correcting_node)
     graph.add_node("tools_after_budget", tool_node)
+    graph.add_node("parse_details", parse_details_node)
+    graph.add_node("parse_final_reqs", parse_final_reqs_node)
 
     graph.add_edge(START, "entry")
-    graph.add_edge("entry", "parse_customer")
+    graph.add_edge("entry", "parse_entry_middleware")
+    graph.add_conditional_edges(
+        "parse_entry_middleware",
+        route_after_input,
+        {"continue": "parse_customer", "back": "entry_middleware"},
+    )
+    graph.add_edge("entry_middleware", "parse_entry_middleware")
     graph.add_edge("parse_customer", "parse_project_name")
     graph.add_edge("parse_project_name", "project_type")
     graph.add_edge("project_type", "parse_project_type")
@@ -67,12 +83,21 @@ def build_graph():
         {"continue": "tools_after_detalize", "end": "mid"},
     )
     graph.add_edge("tools_after_detalize", "detalize")
-    graph.add_edge("mid", "check_details")
+    graph.add_edge("mid", "parse_mid_middleware")
+    graph.add_conditional_edges(
+        "parse_mid_middleware",
+        route_after_input,
+        {"continue": "check_details", "back": "parse_mid_middleware"},
+    )
+    graph.add_edge("mid_middleware", "parse_mid_middleware")
 
     graph.add_conditional_edges(
-        "check_details", route_after_input, {"continue": "budget", "back": "correcting"}
+        "check_details",
+        route_after_input,
+        {"continue": "parse_details", "back": "correcting"},
     )
     graph.add_edge("correcting", "detalize")
+    graph.add_edge("parse_details", "budget")
 
     graph.add_edge("budget", "parse_budget")
     graph.add_edge("parse_budget", "budget_analysis")
@@ -86,9 +111,10 @@ def build_graph():
     graph.add_conditional_edges(
         "parse_budget_analysis",
         route_after_input,
-        {"continue": "final", "back": "budget_correcting"},
+        {"continue": "parse_final_reqs", "back": "budget_correcting"},
     )
-    graph.add_edge("budget_correcting", "correcting")
+    graph.add_edge("budget_correcting", "parse_details")
+    graph.add_edge("parse_final_reqs", "final")
     graph.add_edge("final", END)
 
     memory = MemorySaver()
@@ -96,8 +122,10 @@ def build_graph():
         checkpointer=memory,
         interrupt_after=[
             "entry",
+            "entry_middleware",
             "project_type",
             "mid",
+            "mid_middleware",
             "budget",
             "parse_budget_analysis",
         ],
