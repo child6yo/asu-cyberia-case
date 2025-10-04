@@ -7,20 +7,31 @@ from services.agent.utils.messages import get_last_human_message
 
 
 def parse_customer_node(state: SystemState) -> dict:
-    parser = JsonOutputParser(pydantic_object=Customer)
-    prompt = PromptTemplate(
-        template="""Извлеки из сообщения необходимую информацию о пользователе...
-        {format_instructions}
-        Верни ТОЛЬКО JSON!""",
+    customer_parser = JsonOutputParser(pydantic_object=Customer)
+    customer_prompt = PromptTemplate(
+        template="""Извлеки из сообщения необходимую информацию о пользователе. 
+    Если чего-то не хватает - заполни только те поля, информацию о которых пользователь предоставил.
+
+    Сообщение: {user_input}
+
+    {format_instructions}
+
+    Верни ТОЛЬКО JSON!""",
         input_variables=["user_input"],
-        partial_variables={"format_instructions": parser.get_format_instructions()},
+        partial_variables={
+            "format_instructions": customer_parser.get_format_instructions()
+        },
     )
     user_input = get_last_human_message(state)
+    messages = state["messages"]
+    new_messages = messages + [HumanMessage(content=user_input)]
+
     try:
-        chain = prompt | simple_llm | parser
-        result = chain.invoke({"user_input": user_input})
+        parser_chain = customer_prompt | simple_llm | customer_parser
+        result = parser_chain.invoke({"user_input": user_input})
+
         return {
-            "messages": state.messages + [HumanMessage(content=user_input)],
+            "messages": new_messages,
             "project": {
                 "customer": {
                     "name": result.get("name"),
@@ -29,11 +40,18 @@ def parse_customer_node(state: SystemState) -> dict:
                 }
             },
         }
+
     except Exception as e:
         print(f"Ошибка парсинга клиента: {e}")
         return {
-            "messages": state.messages + [HumanMessage(content=user_input)],
-            "project": {"customer": {"name": None, "email": None, "phone": None}},
+            "messages": new_messages,
+            "project": {
+                "customer": {
+                    "name": None,
+                    "email": None,
+                    "phone": None,
+                }
+            },
         }
 
 
@@ -163,7 +181,7 @@ def parse_budget_node(state: SystemState) -> dict:
         result = chain.invoke(
             {
                 "user_input": user_input,
-                "context": state["messages"][0] + state["messages"][-3:],
+                "context": [state["messages"][0]] + state["messages"][-3:],
             }
         )
 

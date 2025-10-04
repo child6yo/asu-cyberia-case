@@ -14,7 +14,7 @@ project_types = [
 
 def project_type_node(state: SystemState) -> dict:
     try:
-        messages = state.messages + [
+        messages = state["messages"] + [
             HumanMessage(
                 content=f"Теперь необходимо спросить о типе проекта... Возможные типы: {', '.join(project_types)}."
             )
@@ -23,7 +23,9 @@ def project_type_node(state: SystemState) -> dict:
         new_messages = messages + [AIMessage(content=response.content)]
         return {"messages": new_messages}
     except Exception as e:
-        return {"messages": state.messages + [AIMessage(content="Извините, ошибка...")]}
+        return {
+            "messages": state["messages"] + [AIMessage(content="Извините, ошибка...")]
+        }
 
 
 def detalize_node(state: SystemState) -> dict:
@@ -39,7 +41,7 @@ def detalize_node(state: SystemState) -> dict:
             """
         )
     ]
-    response = llm_with_tools.invoke(messages[0] + messages[-3:])
+    response = llm_with_tools.invoke([messages[0]] + messages[-3:])
     print(response.content)
 
     return {"messages": state["messages"] + [response]}
@@ -108,7 +110,7 @@ def correcting_node(state: SystemState) -> dict:
         chain = correction_prompt | llm_with_tools
         updated_requirements = chain.invoke(
             {
-                "context": state["messages"][0] + state["messages"][-3:],
+                "context": [state["messages"][0]] + state["messages"][-3:],
                 "user_input": user_input,
                 "requirements": state["project"]["requirements"],
                 "description": state["project"]["description"],
@@ -136,7 +138,7 @@ def budget_node(state: SystemState) -> dict:
             )
         ]
 
-        response = simple_llm.invoke(messages[0] + messages[-3:])
+        response = simple_llm.invoke([messages[0]] + messages[-3:])
         ai_response = response.content
 
         print(ai_response)
@@ -168,7 +170,7 @@ def budget_analysis_node(state: SystemState) -> dict:
             """
         )
     ]
-    response = llm_with_tools.invoke(messages[0] + messages[-3:])
+    response = llm_with_tools.invoke([messages[0]] + messages[-3:])
     print(response.content)
 
     return {"messages": [response]}
@@ -180,7 +182,7 @@ def budget_correcting_node(state: SystemState) -> dict:
     new_messages = messages + [HumanMessage(content=user_input)]
 
     try:
-        response = simple_llm.invoke(new_messages[0] + new_messages[-3:])
+        response = simple_llm.invoke([messages[0]] + new_messages[-3:])
         ai_response = response.content
 
         print(ai_response)
@@ -197,14 +199,6 @@ def budget_correcting_node(state: SystemState) -> dict:
         ]
 
         return {"messages": messages}
-
-
-def final_node(state: SystemState) -> dict:
-    print(state["project"])
-    return {
-        "messages": state["messages"]
-        + [AIMessage(content="Спасибо! Ваш проект сохранён.")]
-    }
 
 
 def mid_node(state: SystemState) -> dict:

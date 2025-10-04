@@ -1,9 +1,12 @@
 from fastapi import APIRouter
-from schemas.chat import *
-from app.services.agent.app import INITIAL_STATE, app
 from langchain_core.messages import AIMessage, HumanMessage
+from schemas.chat import *
+from schemas.project import ProjectResponse
+from services.agent.app import INITIAL_STATE, app
+from repository.memory.projects import projects_volume
 
-router = APIRouter(prefix="/api", tags=["query"])
+
+router = APIRouter(prefix="/api", tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -34,3 +37,8 @@ async def chat(request: ChatRequest):
         project=final_state["project"],
         finished=False,
     )
+
+
+@router.get("/projects", response_model=ProjectResponse)
+async def projects():
+    return ProjectResponse(response=projects_volume.GetAll())

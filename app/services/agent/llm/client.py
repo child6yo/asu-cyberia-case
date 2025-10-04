@@ -1,5 +1,5 @@
 from langchain_gigachat.chat_models import GigaChat
-from app.services.agent.config.settings import GIGACHAT_CRED
+from services.agent.config.settings import GIGACHAT_CRED
 from services.agent.tools import tools_list
 
 simple_llm = GigaChat(

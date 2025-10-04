@@ -20,10 +20,13 @@ from services.agent.nodes.project_flow import (
     budget_node,
     budget_analysis_node,
     budget_correcting_node,
-    final_node,
     mid_node,
 )
-from routing.conditions import route_after_input, route_before_tools
+from services.agent.nodes.final import final_node
+from services.agent.routing.conditions import (
+    route_after_input,
+    route_before_tools,
+)
 
 
 def build_graph():
