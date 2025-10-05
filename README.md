@@ -8,10 +8,11 @@
 
 ## Пример работы
 
-<img src="etc\assets\bot_exp1.png" width="600" style="flex-shrink: 0;">
+<img src="etc\assets\bot_exp2.png" width="600" style="flex-shrink: 0;">
 
 Помимо стандартных ситуаций возникают и те, где бюджет\сроки пользователя не подходят для реализации всего желаемого функционала. В таком случае предлагается несколько альтернатив.
-<img src="etc\assets\bot_exp2.png" width="600" style="flex-shrink: 0;">
+
+<img src="etc\assets\bot_exp1.png" width="600" style="flex-shrink: 0;">
 
 ## Как работает приложение
 
