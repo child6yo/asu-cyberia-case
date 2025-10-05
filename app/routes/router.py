@@ -8,6 +8,10 @@ from repository.memory.projects import projects_volume
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
+final_message = (
+    "Вы завершили создание карточки проекта, перезагрузите бота для дальнейшей работы."
+)
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -30,7 +34,9 @@ async def chat(request: ChatRequest):
     final_state = app.get_state(config).values
     last_message = final_state["messages"][-1]
 
-    response_text = last_message.content if isinstance(last_message, AIMessage) else "…"
+    response_text = (
+        last_message.content if isinstance(last_message, AIMessage) else final_message
+    )
 
     return ChatResponse(
         response=response_text,
