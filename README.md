@@ -41,6 +41,8 @@
 git clone https://github.com/child6yo/asu-cyberia-case
 ```
 
+- Создайте .env по образу .env.example. Вставьте туда свой API ключ от openrouter.
+
 - Соберите приложение через docker compose
 ```
 docker comopose up --build
