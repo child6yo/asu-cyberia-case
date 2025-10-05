@@ -32,4 +32,64 @@
 
 ## Ручной запуск приложения
 
-TODO
+Для ручного развертывания среды приложения потребуется Docker.
+
+Этапы развертывания:
+
+- Склонируйте репозиторий
+```
+git clone https://github.com/child6yo/asu-cyberia-case
+```
+
+- Соберите приложение через docker compose
+```
+docker comopose up --build
+```
+
+- UI будет доступен по адресу localhost:80
+
+## API REFERENCE 
+
+### POST /api/chat - эндпоинт обращения к чат-боту
+
+**Request body**
+
+```
+{
+  "user_id": "string",
+  "message": "string"
+}
+```
+
+**200 Response body**
+
+```
+{
+  "response": "string",
+  "project": {
+    ...
+  }
+}
+```
+
+### GET api/projects - эндпоинт выдачи всех собранных проектов
+
+**200 Response body**
+
+```
+{
+  "response": [
+    {
+      "name": "string",
+      "customer": {
+        "name": "string",
+        "email": "string",
+        "phone": "string"
+      },
+      "description": "string",
+      "requirements": "string",
+      "estimate": "string"
+    }
+  ]
+}
+```

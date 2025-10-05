@@ -2,7 +2,7 @@ const chatbox = document.getElementById('chatbox');
 const input = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 
-const API_URL = "https://pkbn5sdd-8000.asse.devtunnels.ms"; 
+const API_URL = "http://localhost:8000"; 
 
 // получаем или генерим айди пользователя
 let userId = localStorage.getItem('user_id');

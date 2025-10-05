@@ -1,0 +1,27 @@
+services:
+  chat:
+    build: ./app
+    container_name: chat
+    volumes:
+      - ./static:/order/static
+    ports:
+      - 8000:8000
+    environment:
+      - LLM_CRED
+    networks:
+      - dev-network
+
+  frontend:
+    build: ./client
+    container_name: nginx
+    ports:
+      - 80:80
+    restart: always
+    depends_on:
+      - chat
+    networks:
+      - dev-network
+
+networks:
+  dev-network:
+    driver: bridge
