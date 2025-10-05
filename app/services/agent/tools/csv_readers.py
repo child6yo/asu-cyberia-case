@@ -14,7 +14,7 @@ def get_corp_options() -> Options:
     Ожидаемые колонки в файле: 'Услуга', 'Срок (ч)', 'Стоимость (₽)'.
     Срок возвращается в часах (без конвертации в дни).
     """
-    file_path = "app/services/agent/tools/data/corp.csv"
+    file_path = os.path.join(os.path.dirname(__file__), "data", "corp.csv")
 
     if not os.path.exists(file_path):
         return Options(
@@ -95,7 +95,7 @@ def get_ecom_options() -> Options:
     Ожидаемые колонки в файле: 'Услуга', 'Срок (ч)', 'Стоимость (₽)'.
     Срок возвращается в часах (без конвертации в дни).
     """
-    file_path = "app/services/agent/tools/data/ecom.csv"
+    file_path = os.path.join(os.path.dirname(__file__), "data", "ecom.csv")
 
     if not os.path.exists(file_path):
         return Options(
@@ -176,7 +176,7 @@ def get_landing_options() -> Options:
     Ожидаемые колонки в файле: 'Услуга', 'Срок (ч)', 'Стоимость (₽)'.
     Срок возвращается в часах (без конвертации в дни).
     """
-    file_path = "app/services/agent/tools/data/landing.csv"
+    file_path = os.path.join(os.path.dirname(__file__), "data", "landing.csv")
 
     if not os.path.exists(file_path):
         return Options(
